@@ -9,6 +9,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
+
     _database = await _initDB('bookmarks.db');
     return _database!;
   }
@@ -19,7 +20,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -31,25 +32,36 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         url TEXT NOT NULL,
         title TEXT NOT NULL,
-        thumbnail TEXT,
         description TEXT,
+        thumbnail TEXT,
         createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     ''');
   }
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // All columns are already included in the initial table creation
+    if (oldVersion < 3) {
+      // 테이블 삭제 후 재생성
+      await db.execute('DROP TABLE IF EXISTS bookmarks');
+      await _createDB(db, newVersion);
+    }
   }
 
   Future<int> insertBookmark(Map<String, dynamic> bookmark) async {
     final db = await database;
-    return await db.insert('bookmarks', bookmark);
+    final id = await db.insert('bookmarks', bookmark);
+    return id;
   }
 
   Future<List<Map<String, dynamic>>> getAllBookmarks() async {
     final db = await database;
-    return await db.query('bookmarks', orderBy: 'createdAt DESC');
+    final result = await db.query('bookmarks', orderBy: 'createdAt DESC');
+    return result;
+  }
+
+  Future<int> clearAllBookmarks() async {
+    final db = await database;
+    return await db.delete('bookmarks');
   }
 
   Future<int> deleteBookmark(int id) async {

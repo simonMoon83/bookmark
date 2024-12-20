@@ -1,0 +1,4 @@
+#Fri Dec 20 12:51:55 KST 2024
+base.0=/Volumes/mac/Apple_Mac/Project/toy-project/flutterTest/bookmark/android/app/build/intermediates/dex/release/minifyReleaseWithR8/classes.dex
+renamed.0=classes.dex
+path.0=classes.dex
