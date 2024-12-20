@@ -32,7 +32,7 @@ class _MyAppState extends State<MyApp> {
     // For sharing or opening urls/text coming from outside the app while the app is in the memory
     // Listen to media sharing coming from outside the app while the app is in the memory.
     _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen((value) {
-      _sharedFiles.value = value;
+      _sharedFiles.value = List<SharedMediaFile>.from(value);
       debugPrint(
           'getMediaStream: ${_sharedFiles.value.map((f) => f.toMap()).toString()}');
       // Tell the library that we are done processing the intent.
@@ -46,6 +46,9 @@ class _MyAppState extends State<MyApp> {
       _sharedFiles.value = value;
       debugPrint(
           'getInitialMedia: ${_sharedFiles.value.map((f) => f.toMap()).toString()}');
+
+      // Tell the library that we are done processing the intent.
+      ReceiveSharingIntent.instance.reset();
     });
   }
 

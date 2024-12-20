@@ -22,12 +22,11 @@ class _HomeScreenState extends State<HomeScreen> {
   final dbHelper = DatabaseHelper.instance;
   List<Bookmark> bookmarks = [];
   bool isLoading = false;
-  List<SharedMediaFile>? _initialSharedFiles;
+  bool _initialSharedFilesProcessed = false;
 
   @override
   void initState() {
     super.initState();
-    _initialSharedFiles = widget.initialSharedFiles;
     loadBookmarks();
     debugPrint('initState called');
   }
@@ -36,18 +35,36 @@ class _HomeScreenState extends State<HomeScreen> {
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.initialSharedFiles != oldWidget.initialSharedFiles) {
-      _initialSharedFiles = widget.initialSharedFiles;
-      if (_initialSharedFiles != null && _initialSharedFiles!.isNotEmpty) {
-        debugPrint('initialSharedFiles changed, adding bookmarks');
-        for (final file in _initialSharedFiles!) {
-          if (file.type == SharedMediaType.text) {
-            debugPrint(
-                'Adding bookmark from initial shared file: ${file.path}');
-            _addBookmark(file.path, initialLoad: true);
-          }
-        }
+      if (widget.initialSharedFiles != null &&
+          widget.initialSharedFiles!.isNotEmpty &&
+          !_initialSharedFilesProcessed) {
+        setState(() {
+          _initialSharedFilesProcessed = true;
+        });
+        _processInitialSharedFiles();
       }
     }
+  }
+
+  Future<void> _processInitialSharedFiles() async {
+    if (widget.initialSharedFiles == null || widget.initialSharedFiles!.isEmpty)
+      return;
+
+    for (final file in widget.initialSharedFiles!) {
+      if (file.type == SharedMediaType.text) {
+        debugPrint('Adding bookmark from initial shared file: ${file.path}');
+        await _addBookmark(file.path, initialLoad: true);
+      }
+    }
+    await loadBookmarks();
+    // Clear the initialSharedFiles after processing
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          widget.initialSharedFiles?.clear();
+        });
+      }
+    });
   }
 
   Future<void> loadBookmarks() async {
@@ -79,11 +96,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
       debugPrint('URL: $url, isYouTube: $isYouTube');
 
+      String parsedUrl = url;
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        parsedUrl = 'https://$url';
+      }
+
       if (isYouTube) {
         final yt = YoutubeExplode();
         debugPrint('유튜브 정보 가져오기 시작');
         try {
-          final video = await yt.videos.get(url);
+          final video = await yt.videos.get(parsedUrl);
           title = video.title;
           thumbnailUrl = video.thumbnails.highResUrl;
           yt.close();
@@ -98,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (!isYouTube) {
         debugPrint('웹페이지 정보 가져오기 시작');
-        final response = await http.get(Uri.parse(url));
+        final response = await http.get(Uri.parse(parsedUrl));
         debugPrint('웹페이지 정보 가져오기 완료: statusCode: ${response.statusCode}');
         if (response.statusCode == 200) {
           final document = parser.parse(response.body);
@@ -165,6 +187,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('HomeScreen build method called');
+    debugPrint('initialSharedFilesProcessed: $_initialSharedFilesProcessed');
+    if (!_initialSharedFilesProcessed &&
+        widget.initialSharedFiles != null &&
+        widget.initialSharedFiles!.isNotEmpty) {
+      debugPrint('initialSharedFiles is not empty');
+
+      _initialSharedFilesProcessed = true;
+      _processInitialSharedFiles();
+    } else {
+      debugPrint('initialSharedFiles is null or empty or already processed');
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('북마크'),
