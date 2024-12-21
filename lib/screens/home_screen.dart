@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/bookmark.dart';
+import '../models/category.dart' as cat;
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' as parser;
 import 'package:share_plus/share_plus.dart';
@@ -9,6 +10,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:flutter/foundation.dart';
+import '../widgets/bookmark_edit_dialog.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<SharedMediaFile>? initialSharedFiles;
@@ -23,11 +26,15 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Bookmark> bookmarks = [];
   bool isLoading = false;
   bool _initialSharedFilesProcessed = false;
+  List<cat.Category> categories = [];
+  String _searchQuery = '';
+  cat.Category? _selectedCategory;
 
   @override
   void initState() {
     super.initState();
     loadBookmarks();
+    loadCategories();
     debugPrint('initState called');
   }
 
@@ -35,55 +42,112 @@ class _HomeScreenState extends State<HomeScreen> {
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.initialSharedFiles != oldWidget.initialSharedFiles) {
+      debugPrint('didUpdateWidget: initialSharedFiles changed');
       if (widget.initialSharedFiles != null &&
-          widget.initialSharedFiles!.isNotEmpty &&
-          !_initialSharedFilesProcessed) {
+          widget.initialSharedFiles!.isNotEmpty) {
+        debugPrint('didUpdateWidget: processing initial shared files');
         setState(() {
-          _initialSharedFilesProcessed = true;
+          _initialSharedFilesProcessed = false;
         });
         _processInitialSharedFiles();
+      } else {
+        debugPrint(
+            'didUpdateWidget: no initial shared files or already processed');
       }
     }
   }
 
   Future<void> _processInitialSharedFiles() async {
-    if (widget.initialSharedFiles == null || widget.initialSharedFiles!.isEmpty)
+    debugPrint('_processInitialSharedFiles: start');
+    if (widget.initialSharedFiles == null ||
+        widget.initialSharedFiles!.isEmpty) {
+      debugPrint('_processInitialSharedFiles: no files to process');
       return;
+    }
 
-    for (final file in widget.initialSharedFiles!) {
+    final List<SharedMediaFile> sharedFiles =
+        List.from(widget.initialSharedFiles!);
+
+    for (final file in sharedFiles) {
       if (file.type == SharedMediaType.text) {
-        debugPrint('Adding bookmark from initial shared file: ${file.path}');
-        await _addBookmark(file.path, initialLoad: true);
+        debugPrint(
+            '_processInitialSharedFiles: adding bookmark from ${file.path}');
+        final bookmark = await _addBookmark(file.path, initialLoad: true);
+        if (bookmark != null && mounted) {
+          await loadCategories();
+          final result = await showDialog<Bookmark>(
+            context: context,
+            builder: (context) {
+              return BookmarkEditDialog(
+                  bookmark: bookmark, categories: categories);
+            },
+          );
+          if (result != null) {
+            await dbHelper.updateBookmark(result);
+          }
+        }
       }
     }
-    await loadBookmarks();
-    // Clear the initialSharedFiles after processing
+    if (mounted) {
+      await loadBookmarks();
+    }
+
+    debugPrint('_processInitialSharedFiles: loadBookmarks completed');
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         setState(() {
           widget.initialSharedFiles?.clear();
+          debugPrint('_processInitialSharedFiles: initialSharedFiles cleared');
         });
       }
     });
   }
 
   Future<void> loadBookmarks() async {
+    debugPrint('loadBookmarks: start');
     setState(() {
       isLoading = true;
     });
 
     final loadedBookmarks = await dbHelper.getAllBookmarks();
+    debugPrint('loadBookmarks: bookmarks loaded from DB');
+    List<Bookmark> filteredBookmarks = loadedBookmarks;
+
+    if (_searchQuery.isNotEmpty) {
+      filteredBookmarks = filteredBookmarks
+          .where((bookmark) =>
+              bookmark.title.toLowerCase().contains(_searchQuery.toLowerCase()))
+          .toList();
+    }
+
+    if (_selectedCategory != null) {
+      filteredBookmarks = filteredBookmarks
+          .where((bookmark) =>
+              _selectedCategory!.id == -1 ||
+              bookmark.categoryId == _selectedCategory!.id)
+          .toList();
+    }
 
     if (!mounted) return;
     setState(() {
-      bookmarks = loadedBookmarks.map((map) => Bookmark.fromMap(map)).toList();
+      bookmarks = List.from(filteredBookmarks);
+      debugPrint('loadBookmarks: bookmarks updated');
       isLoading = false;
+    });
+    debugPrint('loadBookmarks: end');
+  }
+
+  Future<void> loadCategories() async {
+    final loadedCategories = await dbHelper.getAllCategories();
+    setState(() {
+      categories = loadedCategories;
     });
   }
 
-  Future<void> _addBookmark(String url, {bool initialLoad = false}) async {
+  Future<Bookmark?> _addBookmark(String url, {bool initialLoad = false}) async {
     debugPrint('_addBookmark called with url: $url, initialLoad: $initialLoad');
-    if (url.isEmpty) return;
+    if (url.isEmpty) return null;
 
     setState(() {
       isLoading = true;
@@ -150,24 +214,30 @@ class _HomeScreenState extends State<HomeScreen> {
         // Check if bookmark already exists
         final existingBookmarks = await dbHelper.getAllBookmarks();
         final bookmarkExists =
-            existingBookmarks.any((element) => element['url'] == url);
+            existingBookmarks.any((element) => element.url == url);
         if (!bookmarkExists) {
-          await dbHelper.insertBookmark(bookmark.toMap());
+          final insertedId = await dbHelper.insertBookmark(bookmark);
+          final newBookmark = bookmark.copyWith(id: insertedId);
           debugPrint('북마크 추가 완료');
+          if (!initialLoad) {
+            await loadCategories();
+            final result = await showDialog<Bookmark>(
+              context: context,
+              builder: (context) {
+                return BookmarkEditDialog(
+                    bookmark: newBookmark, categories: categories);
+              },
+            );
+            if (result != null) {
+              await dbHelper.updateBookmark(result);
+            }
+          }
+          return newBookmark;
         } else {
           debugPrint('북마크가 이미 존재합니다.');
         }
       } catch (e) {
         debugPrint('데이터베이스 삽입 오류: $e');
-      }
-      if (!initialLoad) {
-        await loadBookmarks();
-      }
-
-      if (mounted && !initialLoad) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('북마크가 추가되었습니다: ${bookmark.title}')),
-        );
       }
     } catch (e) {
       debugPrint('북마크 추가 중 오류 발생: $e');
@@ -182,61 +252,85 @@ class _HomeScreenState extends State<HomeScreen> {
           isLoading = false;
         });
       }
+      debugPrint('_addBookmark: end');
     }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('HomeScreen build method called');
-    debugPrint('initialSharedFilesProcessed: $_initialSharedFilesProcessed');
+    debugPrint(
+        'HomeScreen build method called, initialSharedFilesProcessed: $_initialSharedFilesProcessed');
+
     if (!_initialSharedFilesProcessed &&
         widget.initialSharedFiles != null &&
         widget.initialSharedFiles!.isNotEmpty) {
-      debugPrint('initialSharedFiles is not empty');
-
-      _initialSharedFilesProcessed = true;
+      debugPrint('build: initialSharedFiles is not empty, processing files');
       _processInitialSharedFiles();
+      setState(() {
+        _initialSharedFilesProcessed = true;
+      });
     } else {
-      debugPrint('initialSharedFiles is null or empty or already processed');
+      debugPrint(
+          'build: initialSharedFiles is null or empty or already processed');
     }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('북마크'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.close, size: 24),
-            onPressed: () async {
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('북마크 초기화'),
-                  content: const Text('모든 북마크가 삭제됩니다. 계속하시겠습니까?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('취소'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('확인'),
-                    ),
-                  ],
-                ),
-              );
-
-              if (confirmed == true) {
-                await dbHelper.clearAllBookmarks();
+          Expanded(
+            child: TextField(
+              decoration: const InputDecoration(
+                hintText: '제목 검색',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
                 loadBookmarks();
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('모든 북마크가 삭제되었습니다')),
-                );
-              }
-            },
+              },
+            ),
           ),
+          const SizedBox(width: 8),
+          categories.isEmpty
+              ? const SizedBox.shrink()
+              : Expanded(
+                  child: DropdownButtonFormField<cat.Category>(
+                    value: _selectedCategory,
+                    hint: const Text('카테고리'),
+                    items: [
+                      const DropdownMenuItem<cat.Category>(
+                        value: null,
+                        child: Text('전체'),
+                      ),
+                      ...categories.map((category) {
+                        return DropdownMenuItem<cat.Category>(
+                          value: category,
+                          child: Text(category.name),
+                        );
+                      }).toList(),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedCategory = value;
+                      });
+                      loadBookmarks();
+                    },
+                  ),
+                ),
           IconButton(
-            icon: const Icon(Icons.refresh_outlined, size: 24),
-            onPressed: loadBookmarks,
+            icon: const Icon(Icons.settings, size: 24),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              ).then((value) {
+                loadCategories();
+                loadBookmarks();
+              });
+            },
           ),
         ],
       ),
@@ -296,9 +390,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       direction: DismissDirection.endToStart,
                       onDismissed: (direction) async {
                         await dbHelper.deleteBookmark(bookmark.id!);
-                        setState(() {
-                          bookmarks.removeAt(index);
-                        });
+                        if (mounted) {
+                          await loadBookmarks();
+                        }
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('북마크가 삭제되었습니다')),
@@ -385,22 +479,29 @@ class _HomeScreenState extends State<HomeScreen> {
                                       color: Colors.grey,
                                     ),
                                   ),
-                            title: Text(bookmark.title),
-                            subtitle: Text(bookmark.url),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon:
-                                      const Icon(Icons.edit_outlined, size: 22),
-                                  onPressed: () async {
-                                    // 편집 기능 구현
-                                  },
+                            title: Text(
+                              bookmark.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            trailing: PopupMenuButton<String>(
+                              onSelected: (String result) {
+                                if (result == 'edit') {
+                                  _editBookmark(bookmark);
+                                } else if (result == 'share') {
+                                  _shareBookmark(bookmark);
+                                }
+                              },
+                              itemBuilder: (BuildContext context) =>
+                                  <PopupMenuEntry<String>>[
+                                const PopupMenuItem<String>(
+                                  value: 'edit',
+                                  child: Text('편집'),
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.share_outlined,
-                                      size: 22),
-                                  onPressed: () => _shareBookmark(bookmark),
+                                const PopupMenuItem<String>(
+                                  value: 'share',
+                                  child: Text('공유'),
                                 ),
                               ],
                             ),
@@ -410,43 +511,60 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   },
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          final result = await showDialog<String>(
-            context: context,
-            builder: (context) {
-              final controller = TextEditingController();
-              return AlertDialog(
-                title: const Text('URL 입력'),
-                content: TextField(
-                  controller: controller,
-                  decoration: const InputDecoration(
-                    hintText: 'https://...',
-                    prefixIcon: Icon(Icons.link_outlined),
-                  ),
-                  autofocus: true,
-                  onSubmitted: (value) => Navigator.pop(context, value),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('취소'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, controller.text),
-                    child: const Text('확인'),
-                  ),
-                ],
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            heroTag: 'refreshButton',
+            onPressed: loadBookmarks,
+            tooltip: '새로고침',
+            child: const Icon(Icons.refresh_outlined),
+          ),
+          const SizedBox(height: 16),
+          FloatingActionButton(
+            heroTag: 'addButton',
+            onPressed: () async {
+              final result = await showDialog<String>(
+                context: context,
+                builder: (context) {
+                  final controller = TextEditingController();
+                  return AlertDialog(
+                    title: const Text('URL 입력'),
+                    content: TextField(
+                      controller: controller,
+                      decoration: const InputDecoration(
+                        hintText: 'https://...',
+                        prefixIcon: Icon(Icons.link_outlined),
+                      ),
+                      autofocus: true,
+                      onSubmitted: (value) => Navigator.pop(context, value),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('취소'),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            Navigator.pop(context, controller.text),
+                        child: const Text('확인'),
+                      ),
+                    ],
+                  );
+                },
               );
-            },
-          );
 
-          if (result != null) {
-            _addBookmark(result);
-          }
-        },
-        tooltip: '북마크 추가',
-        child: const Icon(Icons.add),
+              if (result != null) {
+                final newBookmark = await _addBookmark(result);
+                if (newBookmark != null && mounted) {
+                  await loadBookmarks();
+                }
+              }
+            },
+            tooltip: '북마크 추가',
+            child: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }
@@ -456,5 +574,25 @@ class _HomeScreenState extends State<HomeScreen> {
       '${bookmark.title}\n${bookmark.url}',
       subject: bookmark.title,
     );
+  }
+
+  Future<void> _editBookmark(Bookmark bookmark) async {
+    final result = await showDialog<Bookmark>(
+      context: context,
+      builder: (context) {
+        return BookmarkEditDialog(bookmark: bookmark, categories: categories);
+      },
+    );
+
+    if (result != null) {
+      await dbHelper.updateBookmark(result);
+      if (mounted) {
+        await loadBookmarks();
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('북마크가 수정되었습니다')),
+      );
+    }
   }
 }

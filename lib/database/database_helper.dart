@@ -1,67 +1,77 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import '../models/bookmark.dart';
+import '../models/category.dart';
 
 class DatabaseHelper {
-  static final DatabaseHelper instance = DatabaseHelper._init();
+  static final DatabaseHelper instance = DatabaseHelper._internal();
   static Database? _database;
 
-  DatabaseHelper._init();
+  DatabaseHelper._internal();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-
-    _database = await _initDB('bookmarks.db');
+    _database = await _initDB();
     return _database!;
   }
 
-  Future<Database> _initDB(String filePath) async {
+  Future<Database> _initDB() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, filePath);
+    final path = join(dbPath, 'bookmark.db');
 
-    return await openDatabase(
-      path,
-      version: 3,
-      onCreate: _createDB,
-      onUpgrade: _onUpgrade,
-    );
+    return await openDatabase(path,
+        version: 2, onCreate: _onCreate, onUpgrade: _onUpgrade);
   }
 
-  Future _createDB(Database db, int version) async {
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE categories ADD COLUMN `order` INTEGER');
+    }
+  }
+
+  Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE bookmarks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        url TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT,
+        url TEXT,
+        title TEXT,
         thumbnail TEXT,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        description TEXT,
+        createdAt TEXT,
+        categoryId INTEGER,
+        FOREIGN KEY (categoryId) REFERENCES categories(id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        `order` INTEGER
       )
     ''');
   }
 
-  Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 3) {
-      // 테이블 삭제 후 재생성
-      await db.execute('DROP TABLE IF EXISTS bookmarks');
-      await _createDB(db, newVersion);
-    }
+  Future<int> insertBookmark(Bookmark bookmark) async {
+    final db = await database;
+    return await db.insert('bookmarks', bookmark.toMap());
   }
 
-  Future<int> insertBookmark(Map<String, dynamic> bookmark) async {
+  Future<int> updateBookmark(Bookmark bookmark) async {
     final db = await database;
-    final id = await db.insert('bookmarks', bookmark);
-    return id;
+    return await db.update('bookmarks', bookmark.toMap(),
+        where: 'id = ?', whereArgs: [bookmark.id]);
   }
 
-  Future<List<Map<String, dynamic>>> getAllBookmarks() async {
+  Future<List<Bookmark>> getAllBookmarks() async {
     final db = await database;
-    final result = await db.query('bookmarks', orderBy: 'createdAt DESC');
-    return result;
+    final List<Map<String, dynamic>> maps =
+        await db.query('bookmarks', orderBy: 'createdAt DESC');
+    return List.generate(maps.length, (i) => Bookmark.fromMap(maps[i]));
   }
 
-  Future<int> clearAllBookmarks() async {
+  Future<void> clearAllBookmarks() async {
     final db = await database;
-    return await db.delete('bookmarks');
+    await db.delete('bookmarks');
   }
 
   Future<int> deleteBookmark(int id) async {
@@ -69,13 +79,26 @@ class DatabaseHelper {
     return await db.delete('bookmarks', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<int> updateBookmark(Map<String, dynamic> bookmark) async {
+  Future<int> insertCategory(Category category) async {
     final db = await database;
-    return db.update(
-      'bookmarks',
-      bookmark,
-      where: 'id = ?',
-      whereArgs: [bookmark['id']],
-    );
+    return await db.insert('categories', category.toMap());
+  }
+
+  Future<int> updateCategory(Category category) async {
+    final db = await database;
+    return await db.update('categories', category.toMap(),
+        where: 'id = ?', whereArgs: [category.id]);
+  }
+
+  Future<List<Category>> getAllCategories() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps =
+        await db.query('categories', orderBy: '`order` ASC');
+    return List.generate(maps.length, (i) => Category.fromMap(maps[i]));
+  }
+
+  Future<int> deleteCategory(int id) async {
+    final db = await database;
+    return await db.delete('categories', where: 'id = ?', whereArgs: [id]);
   }
 }

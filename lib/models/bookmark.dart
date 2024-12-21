@@ -5,6 +5,7 @@ class Bookmark {
   final String thumbnail;
   final String description;
   final DateTime createdAt;
+  final int? categoryId;
 
   Bookmark({
     this.id,
@@ -13,6 +14,7 @@ class Bookmark {
     required this.thumbnail,
     required this.description,
     required this.createdAt,
+    this.categoryId,
   });
 
   Map<String, dynamic> toMap() {
@@ -23,6 +25,7 @@ class Bookmark {
       'thumbnail': thumbnail,
       'description': description,
       'createdAt': createdAt.toIso8601String(),
+      'categoryId': categoryId,
     };
   }
 
@@ -34,6 +37,7 @@ class Bookmark {
       thumbnail: map['thumbnail'],
       description: map['description'],
       createdAt: DateTime.parse(map['createdAt']),
+      categoryId: map['categoryId'],
     );
   }
 
@@ -44,6 +48,7 @@ class Bookmark {
     String? thumbnail,
     String? description,
     DateTime? createdAt,
+    int? categoryId,
   }) {
     return Bookmark(
       id: id ?? this.id,
@@ -52,6 +57,7 @@ class Bookmark {
       thumbnail: thumbnail ?? this.thumbnail,
       description: description ?? this.description,
       createdAt: createdAt ?? this.createdAt,
+      categoryId: categoryId ?? this.categoryId,
     );
   }
-} 
+}
