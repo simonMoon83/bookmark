@@ -1,4 +1,4 @@
-name: bookmark
+name: easy_bookmark
 description: A new Flutter project.
 publish_to: 'none'
 version: 0.1.0+1
@@ -18,11 +18,35 @@ dependencies:
   url_launcher: ^6.1.14
   cached_network_image: ^3.3.0
   app_links: ^6.3.3
+  provider: ^6.0.0
+  path_provider: ^2.1.1
+  file_picker: ^5.5.0
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    background_color: "#hexcode"
+    theme_color: "#hexcode"
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    icon_size: 48
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
 
 flutter:
   uses-material-design: true

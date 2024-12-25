@@ -12,6 +12,7 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:flutter/foundation.dart';
 import '../widgets/bookmark_edit_dialog.dart';
 import 'settings_screen.dart';
+import 'category_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<SharedMediaFile>? initialSharedFiles;
@@ -111,8 +112,21 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     final loadedBookmarks = await dbHelper.getAllBookmarks();
-    debugPrint('loadBookmarks: bookmarks loaded from DB');
+    debugPrint(
+        'loadBookmarks: bookmarks loaded from DB, count: ${loadedBookmarks.length}');
     List<Bookmark> filteredBookmarks = loadedBookmarks;
+
+    debugPrint('loadBookmarks: _selectedCategory: $_selectedCategory');
+    if (_selectedCategory != null) {
+      if (_selectedCategory!.id != -1) {
+        filteredBookmarks = filteredBookmarks
+            .where((bookmark) => bookmark.categoryId == _selectedCategory!.id)
+            .toList();
+      }
+    }
+
+    debugPrint(
+        'loadBookmarks: after category filter, count: ${filteredBookmarks.length}');
 
     if (_searchQuery.isNotEmpty) {
       filteredBookmarks = filteredBookmarks
@@ -121,18 +135,14 @@ class _HomeScreenState extends State<HomeScreen> {
           .toList();
     }
 
-    if (_selectedCategory != null) {
-      filteredBookmarks = filteredBookmarks
-          .where((bookmark) =>
-              _selectedCategory!.id == -1 ||
-              bookmark.categoryId == _selectedCategory!.id)
-          .toList();
-    }
+    debugPrint(
+        'loadBookmarks: after search filter, count: ${filteredBookmarks.length}');
 
     if (!mounted) return;
     setState(() {
       bookmarks = List.from(filteredBookmarks);
-      debugPrint('loadBookmarks: bookmarks updated');
+      debugPrint(
+          'loadBookmarks: bookmarks updated, count: ${bookmarks.length}');
       isLoading = false;
     });
     debugPrint('loadBookmarks: end');
@@ -277,252 +287,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('북마크'),
+        title: const Text('Easy Bookmark'),
         actions: [
-          Expanded(
-            child: TextField(
-              decoration: const InputDecoration(
-                hintText: '제목 검색',
-                prefixIcon: Icon(Icons.search),
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                });
-                loadBookmarks();
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          categories.isEmpty
-              ? const SizedBox.shrink()
-              : Expanded(
-                  child: DropdownButtonFormField<cat.Category>(
-                    value: _selectedCategory,
-                    hint: const Text('카테고리'),
-                    items: [
-                      const DropdownMenuItem<cat.Category>(
-                        value: null,
-                        child: Text('전체'),
-                      ),
-                      ...categories.map((category) {
-                        return DropdownMenuItem<cat.Category>(
-                          value: category,
-                          child: Text(category.name),
-                        );
-                      }).toList(),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedCategory = value;
-                      });
-                      loadBookmarks();
-                    },
-                  ),
-                ),
           IconButton(
-            icon: const Icon(Icons.settings, size: 24),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              ).then((value) {
-                loadCategories();
-                loadBookmarks();
-              });
-            },
-          ),
-        ],
-      ),
-      body: isLoading
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('북마크를 불러오는 중...'),
-                ],
-              ),
-            )
-          : bookmarks.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.bookmark_border_outlined,
-                        size: 64,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        '북마크가 없습니다',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '아래 + 버튼을 눌러 북마크를 추가해보세요',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[500],
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: bookmarks.length,
-                  itemBuilder: (context, index) {
-                    final bookmark = bookmarks[index];
-                    return Dismissible(
-                      key: Key(bookmark.id.toString()),
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: const Icon(Icons.delete_outline,
-                            color: Colors.white, size: 24),
-                      ),
-                      direction: DismissDirection.endToStart,
-                      onDismissed: (direction) async {
-                        await dbHelper.deleteBookmark(bookmark.id!);
-                        if (mounted) {
-                          await loadBookmarks();
-                        }
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('북마크가 삭제되었습니다')),
-                        );
-                      },
-                      child: Card(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        child: InkWell(
-                          onTap: () async {
-                            try {
-                              final url = Uri.parse(bookmark.url);
-
-                              if (bookmark.url.contains('youtu.be') ||
-                                  bookmark.url.contains('youtube.com')) {
-                                if (await canLaunchUrl(url)) {
-                                  await launchUrl(
-                                    url,
-                                    mode: LaunchMode
-                                        .externalNonBrowserApplication,
-                                  );
-                                } else {
-                                  if (await canLaunchUrl(url)) {
-                                    await launchUrl(url,
-                                        mode: LaunchMode.externalApplication);
-                                  }
-                                }
-                              } else {
-                                if (await canLaunchUrl(url)) {
-                                  await launchUrl(
-                                    url,
-                                    mode: LaunchMode.externalApplication,
-                                  );
-                                }
-                              }
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('URL을 열 수 없습니다: $e')),
-                                );
-                              }
-                            }
-                          },
-                          child: ListTile(
-                            leading: bookmark.thumbnail.isNotEmpty
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: CachedNetworkImage(
-                                      imageUrl: bookmark.thumbnail,
-                                      width: 50,
-                                      height: 50,
-                                      fit: BoxFit.cover,
-                                      placeholder: (context, url) =>
-                                          const Center(
-                                        child: SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        ),
-                                      ),
-                                      errorWidget: (context, url, error) =>
-                                          Container(
-                                        width: 50,
-                                        height: 50,
-                                        color: Colors.grey[200],
-                                        child: const Icon(
-                                          Icons.image_not_supported,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                : Container(
-                                    width: 50,
-                                    height: 50,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[200],
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Icon(
-                                      Icons.bookmark,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                            title: Text(
-                              bookmark.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                            trailing: PopupMenuButton<String>(
-                              onSelected: (String result) {
-                                if (result == 'edit') {
-                                  _editBookmark(bookmark);
-                                } else if (result == 'share') {
-                                  _shareBookmark(bookmark);
-                                }
-                              },
-                              itemBuilder: (BuildContext context) =>
-                                  <PopupMenuEntry<String>>[
-                                const PopupMenuItem<String>(
-                                  value: 'edit',
-                                  child: Text('편집'),
-                                ),
-                                const PopupMenuItem<String>(
-                                  value: 'share',
-                                  child: Text('공유'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            heroTag: 'refreshButton',
-            onPressed: loadBookmarks,
-            tooltip: '새로고침',
-            child: const Icon(Icons.refresh_outlined),
-          ),
-          const SizedBox(height: 16),
-          FloatingActionButton(
-            heroTag: 'addButton',
+            icon: const Icon(Icons.add),
             onPressed: () async {
               final result = await showDialog<String>(
                 context: context,
@@ -562,10 +330,440 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
             tooltip: '북마크 추가',
-            child: const Icon(Icons.add),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings, size: 24),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              ).then((value) {
+                loadCategories();
+                loadBookmarks();
+              });
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.category_outlined, size: 24),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => CategoryScreen()),
+              ).then((value) {
+                loadCategories();
+                loadBookmarks();
+              });
+            },
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(64),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceVariant
+                          .withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    child: SearchBar(
+                      hintText: '제목 검색',
+                      leading: const Icon(Icons.search),
+                      padding: const MaterialStatePropertyAll<EdgeInsets>(
+                        EdgeInsets.symmetric(horizontal: 16.0),
+                      ),
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                        });
+                        loadBookmarks();
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceVariant
+                        .withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: PopupMenuButton<cat.Category?>(
+                      initialValue: _selectedCategory,
+                      tooltip: '카테고리 선택',
+                      position: PopupMenuPosition.under,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.category_outlined,
+                              color: _selectedCategory != null
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                            ),
+                            if (_selectedCategory != null) ...[
+                              const SizedBox(width: 8),
+                              Text(
+                                _selectedCategory!.name,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      itemBuilder: (context) => [
+                        PopupMenuItem<cat.Category?>(
+                          value: cat.Category(id: -1, name: '전체'),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.all_inclusive,
+                                color: _selectedCategory == null
+                                    ? Theme.of(context).colorScheme.primary
+                                    : null,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '전체',
+                                style: TextStyle(
+                                  color: _selectedCategory == null
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                  fontWeight: _selectedCategory == null
+                                      ? FontWeight.w500
+                                      : null,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (categories.isNotEmpty) const PopupMenuDivider(),
+                        ...categories.map((category) {
+                          final isSelected =
+                              _selectedCategory?.id == category.id;
+                          return PopupMenuItem<cat.Category>(
+                            value: category,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.label_outlined,
+                                  color: isSelected
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  category.name,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? Theme.of(context).colorScheme.primary
+                                        : null,
+                                    fontWeight:
+                                        isSelected ? FontWeight.w500 : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                      onSelected: (cat.Category? category) {
+                        setState(() {
+                          _selectedCategory =
+                              category?.id == -1 ? null : category;
+                        });
+                        loadBookmarks();
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
+      body: isLoading
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(
+                    '북마크를 불러오는 중...',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            )
+          : bookmarks.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.bookmark_border_outlined,
+                        size: 64,
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '북마크가 없습니다',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '아래 + 버튼을 눌러 북마크를 추가해보세요',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: bookmarks.length,
+                  itemBuilder: (context, index) {
+                    final bookmark = bookmarks[index];
+                    return Dismissible(
+                      key: Key(bookmark.id.toString()),
+                      background: Container(
+                        color: Theme.of(context).colorScheme.error,
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Icon(Icons.delete_outline,
+                            color: Theme.of(context).colorScheme.onError,
+                            size: 24),
+                      ),
+                      direction: DismissDirection.endToStart,
+                      onDismissed: (direction) async {
+                        await dbHelper.deleteBookmark(bookmark.id!);
+                        if (mounted) {
+                          await loadBookmarks();
+                        }
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('북마크가 삭제되었습니다')),
+                        );
+                      },
+                      child: Card(
+                        elevation: 2,
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () async {
+                            try {
+                              final url = Uri.parse(bookmark.url);
+
+                              if (bookmark.url.contains('youtu.be') ||
+                                  bookmark.url.contains('youtube.com')) {
+                                if (await canLaunchUrl(url)) {
+                                  await launchUrl(
+                                    url,
+                                    mode: LaunchMode
+                                        .externalNonBrowserApplication,
+                                  );
+                                } else {
+                                  if (await canLaunchUrl(url)) {
+                                    await launchUrl(url,
+                                        mode: LaunchMode.externalApplication);
+                                  }
+                                }
+                              } else {
+                                if (await canLaunchUrl(url)) {
+                                  await launchUrl(
+                                    url,
+                                    mode: LaunchMode.externalApplication,
+                                  );
+                                }
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('URL을 열 수 없습니다: $e')),
+                                );
+                              }
+                            }
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: ListTile(
+                              leading: bookmark.thumbnail.isNotEmpty
+                                  ? Hero(
+                                      tag: 'bookmark-${bookmark.id}',
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: CachedNetworkImage(
+                                          imageUrl: bookmark.thumbnail,
+                                          width: 60,
+                                          height: 60,
+                                          fit: BoxFit.cover,
+                                          placeholder: (context, url) =>
+                                              Container(
+                                            width: 60,
+                                            height: 60,
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceVariant,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: const Center(
+                                              child: SizedBox(
+                                                width: 24,
+                                                height: 24,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          errorWidget: (context, url, error) =>
+                                              Container(
+                                            width: 60,
+                                            height: 60,
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceVariant,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: Icon(
+                                              Icons.image_not_supported,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: 60,
+                                      height: 60,
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .surfaceVariant,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        Icons.bookmark,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                        size: 30,
+                                      ),
+                                    ),
+                              title: Text(
+                                bookmark.title,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 4),
+                                  if (bookmark.categoryId != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .secondaryContainer,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          categories
+                                              .firstWhere(
+                                                (cat) =>
+                                                    cat.id ==
+                                                    bookmark.categoryId,
+                                                orElse: () => cat.Category(
+                                                    id: -1, name: '미분류'),
+                                              )
+                                              .name,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall
+                                              ?.copyWith(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSecondaryContainer,
+                                              ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              trailing: PopupMenuButton<String>(
+                                  icon: const Icon(Icons.more_vert, size: 20),
+                                  onSelected: (String value) {
+                                    if (value == 'share') {
+                                      _shareBookmark(bookmark);
+                                    } else if (value == 'edit') {
+                                      _editBookmark(bookmark);
+                                    }
+                                  },
+                                  itemBuilder: (BuildContext context) =>
+                                      <PopupMenuEntry<String>>[
+                                        const PopupMenuItem<String>(
+                                          value: 'share',
+                                          child: Text('공유'),
+                                        ),
+                                        const PopupMenuItem<String>(
+                                          value: 'edit',
+                                          child: Text('편집'),
+                                        ),
+                                      ]),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
     );
   }
 

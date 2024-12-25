@@ -5,12 +5,12 @@ plugins {
 }
 
 android {
-    namespace = "com.example.bookmark"
+    namespace = "com.deepintocoder.bookmark"
     compileSdkVersion 35
     ndkVersion = flutter.ndkVersion
 
     defaultConfig {
-        applicationId = "com.example.bookmark"
+        applicationId = "com.deepintocoder.bookmark"
         minSdk = flutter.minSdkVersion
         targetSdkVersion 35
         versionCode = flutter.versionCode

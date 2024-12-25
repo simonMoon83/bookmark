@@ -3,6 +3,11 @@ import '../database/database_helper.dart';
 import '../models/category.dart' as cat;
 import '../models/bookmark.dart';
 import 'home_screen.dart';
+import '../utils/file_manager.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:provider/provider.dart';
+import '../main.dart';
+import 'category_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -14,6 +19,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final dbHelper = DatabaseHelper.instance;
   List<cat.Category> categories = [];
+  final _fileManager = FileManager();
 
   @override
   void initState() {
@@ -26,6 +32,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       categories = loadedCategories;
     });
+  }
+
+  void _showImportExportDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Import / Export'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ElevatedButton(
+                onPressed: () async {
+                  final path = await _fileManager.exportData();
+                  if (!mounted) return;
+                  if (path != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Data exported to: $path')),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Export cancelled')),
+                    );
+                  }
+                  Navigator.pop(context);
+                },
+                child: const Text('Export'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  FilePickerResult? result =
+                      await FilePicker.platform.pickFiles();
+
+                  if (result != null && result.files.single.path != null) {
+                    final filePath = result.files.single.path!;
+                    await _fileManager.importData(filePath);
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Data imported')),
+                    );
+                    Navigator.pop(context);
+                  }
+                },
+                child: const Text('Import'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -38,177 +100,254 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            ListTile(
-              title: const Text('카테고리 관리'),
-              trailing: const Icon(Icons.arrow_forward_ios),
-              onTap: () {
-                _showCategoryDialog(context, null);
-              },
-            ),
-            Expanded(
-              child: ReorderableListView(
-                onReorder: (oldIndex, newIndex) async {
-                  if (newIndex > oldIndex) {
-                    newIndex -= 1;
-                  }
-                  final cat.Category item = categories.removeAt(oldIndex);
-                  categories.insert(newIndex, item);
-                  for (int i = 0; i < categories.length; i++) {
-                    final updatedCategory = cat.Category(
-                      id: categories[i].id,
-                      name: categories[i].name,
-                      order: i,
-                    );
-                    await dbHelper.updateCategory(updatedCategory);
-                  }
-                  setState(() {});
-                },
-                children: categories.map((category) {
-                  return ListTile(
-                    key: Key(category.id.toString()),
-                    title: Text(category.name),
-                    onTap: () {
-                      _showCategoryDialog(context, category);
-                    },
-                    trailing: const Icon(Icons.drag_handle),
-                  );
-                }).toList(),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  children: [
+                    ListTile(
+                      title: const Text('화면 모드'),
+                    ),
+                    Consumer<ThemeNotifier>(
+                      builder: (context, themeNotifier, child) {
+                        return Column(
+                          children: [
+                            RadioListTile<ThemeMode>(
+                              title: const Text('라이트 모드'),
+                              value: ThemeMode.light,
+                              groupValue: themeNotifier.themeMode,
+                              onChanged: (value) =>
+                                  themeNotifier.setThemeMode(value!),
+                            ),
+                            RadioListTile<ThemeMode>(
+                              title: const Text('다크 모드'),
+                              value: ThemeMode.dark,
+                              groupValue: themeNotifier.themeMode,
+                              onChanged: (value) =>
+                                  themeNotifier.setThemeMode(value!),
+                            ),
+                            RadioListTile<ThemeMode>(
+                              title: const Text('시스템 모드'),
+                              value: ThemeMode.system,
+                              groupValue: themeNotifier.themeMode,
+                              onChanged: (value) =>
+                                  themeNotifier.setThemeMode(value!),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
-            Wrap(
-              spacing: 8.0,
-              runSpacing: 4.0,
+            const SizedBox(height: 10),
+            Column(
               children: [
-                ElevatedButton(
-                  onPressed: () async {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('카테고리 초기화'),
-                        content: const Text('모든 카테고리가 삭제됩니다. 계속하시겠습니까?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('취소'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('확인'),
+                Wrap(
+                  spacing: 8.0,
+                  runSpacing: 4.0,
+                  alignment: WrapAlignment.spaceAround,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () => _showImportExportDialog(context),
+                      style:
+                          ElevatedButton.styleFrom(minimumSize: Size(150, 30)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.import_export_outlined),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Import / Export',
+                              softWrap: true,
+                              textAlign: TextAlign.center,
+                            ),
                           ),
                         ],
                       ),
-                    );
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('카테고리 초기화'),
+                            content: const Text('모든 카테고리가 삭제됩니다. 계속하시겠습니까?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('취소'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('확인'),
+                              ),
+                            ],
+                          ),
+                        );
 
-                    if (confirmed == true) {
-                      List<Bookmark> bookmarks =
-                          await dbHelper.getAllBookmarks();
-                      for (final category in categories) {
-                        await dbHelper.deleteCategory(category.id!);
-                        for (final bookmark in bookmarks) {
-                          if (bookmark.categoryId == category.id) {
-                            final updatedBookmark = Bookmark(
-                              id: bookmark.id,
-                              url: bookmark.url,
-                              title: bookmark.title,
-                              thumbnail: bookmark.thumbnail,
-                              description: bookmark.description,
-                              createdAt: bookmark.createdAt,
-                              categoryId: null,
-                            );
-                            await dbHelper.updateBookmark(updatedBookmark);
+                        if (confirmed == true) {
+                          List<Bookmark> bookmarks =
+                              await dbHelper.getAllBookmarks();
+                          for (final category in categories) {
+                            await dbHelper.deleteCategory(category.id!);
+                            for (final bookmark in bookmarks) {
+                              if (bookmark.categoryId == category.id) {
+                                final updatedBookmark = Bookmark(
+                                  id: bookmark.id,
+                                  url: bookmark.url,
+                                  title: bookmark.title,
+                                  thumbnail: bookmark.thumbnail,
+                                  description: bookmark.description,
+                                  createdAt: bookmark.createdAt,
+                                  categoryId: null,
+                                );
+                                await dbHelper.updateBookmark(updatedBookmark);
+                              }
+                            }
                           }
+                          _loadCategories();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('모든 카테고리가 삭제되었습니다')),
+                          );
                         }
-                      }
-                      _loadCategories();
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('모든 카테고리가 삭제되었습니다')),
-                      );
-                    }
-                  },
-                  child: const Text('카테고리 초기화'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('북마크 초기화'),
-                        content: const Text('모든 북마크가 삭제됩니다. 계속하시겠습니까?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('취소'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('확인'),
+                      },
+                      style:
+                          ElevatedButton.styleFrom(minimumSize: Size(150, 30)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.delete_forever_outlined),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '카테고리 초기화',
+                              softWrap: true,
+                              textAlign: TextAlign.center,
+                            ),
                           ),
                         ],
                       ),
-                    );
-
-                    if (confirmed == true) {
-                      await dbHelper.clearAllBookmarks();
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('모든 북마크가 삭제되었습니다')),
-                      );
-                      Navigator.pop(context, true);
-                    }
-                  },
-                  child: const Text('북마크 초기화'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('북마크 & 카테고리 초기화'),
-                        content: const Text('모든 북마크와 카테고리가 삭제됩니다. 계속하시겠습니까?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('취소'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('북마크 초기화'),
+                            content: const Text('모든 북마크가 삭제됩니다. 계속하시겠습니까?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('취소'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('확인'),
+                              ),
+                            ],
                           ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('확인'),
+                        );
+
+                        if (confirmed == true) {
+                          await dbHelper.clearAllBookmarks();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('모든 북마크가 삭제되었습니다')),
+                          );
+                          Navigator.pop(context, true);
+                        }
+                      },
+                      style:
+                          ElevatedButton.styleFrom(minimumSize: Size(150, 30)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.delete_forever_outlined),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '북마크 초기화',
+                              softWrap: true,
+                              textAlign: TextAlign.center,
+                            ),
                           ),
                         ],
                       ),
-                    );
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('북마크 & 카테고리 초기화'),
+                            content:
+                                const Text('모든 북마크와 카테고리가 삭제됩니다. 계속하시겠습니까?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('취소'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('확인'),
+                              ),
+                            ],
+                          ),
+                        );
 
-                    if (confirmed == true) {
-                      List<Bookmark> bookmarks =
-                          await dbHelper.getAllBookmarks();
-                      for (final category in categories) {
-                        await dbHelper.deleteCategory(category.id!);
-                        for (final bookmark in bookmarks) {
-                          if (bookmark.categoryId == category.id) {
-                            final updatedBookmark = Bookmark(
-                              id: bookmark.id,
-                              url: bookmark.url,
-                              title: bookmark.title,
-                              thumbnail: bookmark.thumbnail,
-                              description: bookmark.description,
-                              createdAt: bookmark.createdAt,
-                              categoryId: null,
-                            );
-                            await dbHelper.updateBookmark(updatedBookmark);
+                        if (confirmed == true) {
+                          List<Bookmark> bookmarks =
+                              await dbHelper.getAllBookmarks();
+                          for (final category in categories) {
+                            await dbHelper.deleteCategory(category.id!);
+                            for (final bookmark in bookmarks) {
+                              if (bookmark.categoryId == category.id) {
+                                final updatedBookmark = Bookmark(
+                                  id: bookmark.id,
+                                  url: bookmark.url,
+                                  title: bookmark.title,
+                                  thumbnail: bookmark.thumbnail,
+                                  description: bookmark.description,
+                                  createdAt: bookmark.createdAt,
+                                  categoryId: null,
+                                );
+                                await dbHelper.updateBookmark(updatedBookmark);
+                              }
+                            }
                           }
+                          await dbHelper.clearAllBookmarks();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('모든 북마크와 카테고리가 삭제되었습니다')),
+                          );
+                          Navigator.pop(context, true);
                         }
-                      }
-                      await dbHelper.clearAllBookmarks();
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('모든 북마크와 카테고리가 삭제되었습니다')),
-                      );
-                      Navigator.pop(context, true);
-                    }
-                  },
-                  child: const Text('초기화'),
+                      },
+                      style:
+                          ElevatedButton.styleFrom(minimumSize: Size(150, 30)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.delete_forever_outlined),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '초기화',
+                              softWrap: true,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 10),
               ],
             ),
           ],
@@ -219,128 +358,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _showCategoryDialog(
       BuildContext context, cat.Category? category) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return CategoryDialog(category: category);
-      },
-    );
-    if (result == true) {
-      _loadCategories();
-    }
-  }
-}
-
-class CategoryDialog extends StatefulWidget {
-  final cat.Category? category;
-  const CategoryDialog({super.key, this.category});
-
-  @override
-  _CategoryDialogState createState() => _CategoryDialogState();
-}
-
-class _CategoryDialogState extends State<CategoryDialog> {
-  final _formKey = GlobalKey<FormState>();
-  final _categoryNameController = TextEditingController();
-  final dbHelper = DatabaseHelper.instance;
-  List<cat.Category> categories = [];
-  cat.Category? _selectedCategory;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCategories();
-    if (widget.category != null) {
-      _selectedCategory = widget.category;
-      _categoryNameController.text = widget.category!.name;
-    }
-  }
-
-  Future<void> _loadCategories() async {
-    final loadedCategories = await dbHelper.getAllCategories();
-    setState(() {
-      categories = loadedCategories;
-    });
-  }
-
-  @override
-  void dispose() {
-    _categoryNameController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('카테고리 관리'),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: _categoryNameController,
-                decoration: const InputDecoration(labelText: '카테고리 이름'),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return '카테고리 이름을 입력해주세요';
-                  }
-                  return null;
-                },
-              ),
-            ],
-          ),
-        ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CategoryScreen(),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('취소'),
-        ),
-        TextButton(
-          onPressed: () async {
-            if (_formKey.currentState!.validate()) {
-              if (_selectedCategory == null) {
-                final newCategory = cat.Category(
-                    name: _categoryNameController.text,
-                    order: categories.length);
-                await dbHelper.insertCategory(newCategory);
-                if (!mounted) return;
-                Navigator.pop(context, true);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('카테고리가 추가되었습니다')),
-                );
-              } else {
-                final updatedCategory = cat.Category(
-                  id: _selectedCategory!.id,
-                  name: _categoryNameController.text,
-                  order: _selectedCategory!.order,
-                );
-                await dbHelper.updateCategory(updatedCategory);
-                if (!mounted) return;
-                Navigator.pop(context, true);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('카테고리가 수정되었습니다')),
-                );
-              }
-            }
-          },
-          child: const Text('저장'),
-        ),
-        if (_selectedCategory != null)
-          TextButton(
-            onPressed: () async {
-              await dbHelper.deleteCategory(_selectedCategory!.id!);
-              if (!mounted) return;
-              Navigator.pop(context, true);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('카테고리가 삭제되었습니다')),
-              );
-            },
-            child: const Text('삭제'),
-          ),
-      ],
     );
   }
 }

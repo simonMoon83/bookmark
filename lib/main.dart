@@ -1,13 +1,42 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+  final prefs = await SharedPreferences.getInstance();
+  final themeMode = prefs.getString('themeMode');
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => ThemeNotifier(
+        initialThemeMode: themeMode == 'dark'
+            ? ThemeMode.dark
+            : themeMode == 'light'
+                ? ThemeMode.light
+                : ThemeMode.system,
+      ),
+      child: const MyApp(),
+    ),
+  );
+}
+
+class ThemeNotifier extends ChangeNotifier {
+  ThemeMode _themeMode;
+  ThemeNotifier({required ThemeMode initialThemeMode})
+      : _themeMode = initialThemeMode;
+  ThemeMode get themeMode => _themeMode;
+
+  void setThemeMode(ThemeMode themeMode) async {
+    _themeMode = themeMode;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('themeMode', themeMode.name);
+  }
 }
 
 class MyApp extends StatefulWidget {
@@ -55,19 +84,33 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     debugPrint('MyApp build method called');
-    return MaterialApp(
-      title: '북마크 앱',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      home: ValueListenableBuilder<List<SharedMediaFile>>(
-        valueListenable: _sharedFiles,
-        builder: (context, sharedFiles, child) {
-          debugPrint('ValueListenableBuilder rebuilt with: $sharedFiles');
-          return HomeScreen(initialSharedFiles: sharedFiles);
-        },
-      ),
+    return Consumer<ThemeNotifier>(
+      builder: (context, themeNotifier, child) {
+        return MaterialApp(
+          title: '북마크 앱',
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+            useMaterial3: true,
+            visualDensity: VisualDensity.adaptivePlatformDensity,
+          ),
+          darkTheme: ThemeData.dark().copyWith(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.blue,
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
+            visualDensity: VisualDensity.adaptivePlatformDensity,
+          ),
+          themeMode: themeNotifier.themeMode,
+          home: ValueListenableBuilder<List<SharedMediaFile>>(
+            valueListenable: _sharedFiles,
+            builder: (context, sharedFiles, child) {
+              debugPrint('ValueListenableBuilder rebuilt with: $sharedFiles');
+              return HomeScreen(initialSharedFiles: sharedFiles);
+            },
+          ),
+        );
+      },
     );
   }
 }
